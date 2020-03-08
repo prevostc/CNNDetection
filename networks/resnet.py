@@ -158,7 +158,9 @@ class ResNet(nn.Module):
         x = self.layer4(x)
 
         x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
+        # https://github.com/microsoft/onnxjs/issues/84#issuecomment-461682909
+        #x = x.view(x.size(0), -1)
+        x = x.view(1, -1)
         x = self.fc(x)
 
         return x

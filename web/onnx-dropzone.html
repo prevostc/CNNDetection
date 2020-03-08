@@ -1,0 +1,126 @@
+<html>
+  <head> </head>
+
+  <body>
+    <!-- Load ONNX.js -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxjs/dist/onnx.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jimp@0.9.5/browser/lib/jimp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dropzone/5.7.0/dropzone.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/dropzone/5.7.0/dropzone.min.css" />
+    <form class="dropzone">
+      <div class="fallback">
+        <input name="file" type="file" multiple />
+      </div>
+    </form>
+    <input type="button" onclick="onTriggerAnalysis()" value="Analyze" />
+    <div>Deep Fake probability: <strong id="fake-prob"></strong></div>
+    <canvas id="canvas"></canvas>
+    <canvas id="canvas-scaled"></canvas>
+
+    
+    <!-- Code that consume ONNX.js -->
+    <script>
+        var imgData = null;
+        var centerCropSize = 224
+        function onFileChange(file) {
+
+          var reader = new FileReader();
+
+          // Closure to capture the file information.
+          reader.onload = async function(e) {
+            var arb = e.target.result
+            let image = await Jimp.read(arb)
+            
+            console.log(image)
+            const ow = image.getWidth();
+            const oh = image.getHeight();
+            const scaleFactor = Math.max(ow / centerCropSize, oh / centerCropSize);
+            const sw = Math.floor(ow / scaleFactor);
+            const sh = Math.max(oh / scaleFactor);
+            image = image.resize(sw, sh);
+            imgData = image.bitmap.data;
+
+            // write scaled image to canvas
+            var canvas = document.getElementById('canvas-scaled')
+            var ctx = canvas.getContext('2d');
+            canvas.width = sw;
+            canvas.height = sh;
+            console.log({scaleFactor, ow, oh, sw, sh})
+
+            ctx.putImageData(new ImageData(new Uint8ClampedArray(imgData), sw, sh), 0, 0);
+          };
+
+
+          // Read in the image file as a data URL.
+          reader.readAsArrayBuffer(file);
+
+
+          var canvas = document.getElementById('canvas')
+            var ctx = canvas.getContext('2d');
+            var img = new Image;
+            img.onload = function() {
+                var width = this.width;
+                var height = this.height;
+
+                canvas.width = width;
+                canvas.height = height;
+                ctx.drawImage(img, 0, 0);
+                console.log(img)
+            }
+            img.src = URL.createObjectURL(file);
+        }
+      // create a session
+      const myOnnxSession = new onnx.InferenceSession();
+      // load the ONNX model file
+      const loadModelPromise = myOnnxSession.loadModel("cnndetection.onnx")
+      
+      async function onTriggerAnalysis() {
+        var canvas = document.getElementById('canvas')
+        var ctx = canvas.getContext('2d');
+
+        // perform CenterCrop 224 ang get rgba data
+        console.log(imgData)
+
+        //https://stackoverflow.com/a/10475622/2523414
+        //imgData is now an array where every 4 places are each pixel. So [0][1][2][3] are the [r][g][b][a] of the first pixel.
+        
+        // we normalize and build the final data ((x - x̄) / s)
+        var norm_mean = [0.485, 0.456, 0.406]
+        var norm_std = [0.229, 0.224, 0.225]
+
+
+        var model_input = new Float32Array(3 * centerCropSize * centerCropSize)
+        // for each color channel
+        for (var ci = 0 ; ci < 3 ; ci ++) {
+            for (var rowi = 0 ; rowi < centerCropSize ; rowi++) {
+                for (var coli = 0 ; coli < centerCropSize ; coli++) {
+                    var idpi = (coli + rowi) * 4 /* input from canvas has an alpha channel */
+                    var tensor_val_i = imgData[idpi + ci] / 255.0 /* torchvision.transforms.ToTensor */
+                    var norm_tensor_val_i = (tensor_val_i - norm_mean[ci]) / norm_std[ci] /* torchvision.transforms.Normalize */
+                    model_input[(ci * centerCropSize * centerCropSize) + (rowi * centerCropSize) + coli] = norm_tensor_val_i
+                }
+            }
+        }
+        console.log(model_input)
+        // note that we used a trick to avoid the onnx Shape operator
+        // that prevent us from having a batch size greater than 1
+        // more info: https://github.com/microsoft/onnxjs/issues/84#issuecomment-461682909
+        const inputs = [
+            new Tensor(model_input, "float32", [1, 3, centerCropSize, centerCropSize])
+        ];
+        console.log(inputs)
+        await loadModelPromise;
+        const outputMap = await myOnnxSession.run(inputs);
+        const outputTensor = outputMap.values().next().value;
+        const res = outputTensor.data[0]
+        //const res = 11.138656 // fake
+        //const res = -31.707857 // real
+        const prob = 1/(1 + Math.exp(-res)) /* sigmoid */
+        console.log({res})
+        console.log({prob})
+
+        document.getElementById("fake-prob").innerText = (prob*100).toFixed(2) + "%"
+      }
+    </script>
+  </body>
+</html>

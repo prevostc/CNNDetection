@@ -16,7 +16,7 @@ model_path = sys.argv[2]
 model = resnet50(num_classes=1)
 state_dict = torch.load(model_path, map_location='cpu')
 model.load_state_dict(state_dict['model'])
-model.cuda()
+#model.cuda()
 model.eval()
 
 trans = transforms.Compose([
@@ -27,7 +27,11 @@ trans = transforms.Compose([
 img = trans(Image.open(input_path).convert('RGB'))
 
 with torch.no_grad():
-    in_tens = img.unsqueeze(0).cuda()
-    prob = model(in_tens).sigmoid().item()
+    in_tens = img.unsqueeze(0)#.cuda()
+    res = model(in_tens)
+    print(res)
+    print(res.sigmoid())
+    prob = res.sigmoid().item()
+    print(prob)
 
 print('probability of being synthetic: {:.2f}%'.format(prob * 100))

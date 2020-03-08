@@ -1,0 +1,57 @@
+<html>
+  <head> </head>
+
+  <body>
+    <!-- Load ONNX.js -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxjs/dist/onnx.min.js"></script>
+    <input type="file" onchange="onFileChange(this.files[0])" />
+    <input type="button" onclick="onTriggerAnalysis()" value="Analyze" />
+    <div id="list"></div>
+
+    
+    <!-- Code that consume ONNX.js -->
+    <script>
+      var model_input = null;
+        function onFileChange(file) {
+
+          var reader = new FileReader();
+
+          // Closure to capture the file information.
+          reader.onload = function(e) {
+            // Render thumbnail.
+            model_input = JSON.parse(e.target.result);
+          };
+          
+
+          // Read in the image file as a data URL.
+          reader.readAsText(file);
+        }
+      // create a session
+      const myOnnxSession = new onnx.InferenceSession();
+      // load the ONNX model file
+      const loadModelPromise = myOnnxSession.loadModel("cnndetection.onnx")
+      
+      async function onTriggerAnalysis() {
+        var centerCropSize = 224
+       
+        console.log(model_input)
+        // note that we used a trick to avoid the onnx Shape operator
+        // that prevent us from having a batch size greater than 1
+        // more info: https://github.com/microsoft/onnxjs/issues/84#issuecomment-461682909
+        const inputs = [
+            new Tensor(model_input, "float32", [1, 3, centerCropSize, centerCropSize])
+        ];
+        console.log(inputs)
+        await loadModelPromise;
+        const outputMap = await myOnnxSession.run(inputs);
+        const outputTensor = outputMap.values().next().value;
+        const res = outputTensor.data[0]
+        //const res = 11.138656 // fake
+        //const res = -31.707857 // real
+        const prob = 1/(1 + Math.exp(-res)) /* sigmoid */
+        console.log({res})
+        console.log({prob})
+      }
+    </script>
+  </body>
+</html>

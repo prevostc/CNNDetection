@@ -1,0 +1,81 @@
+<html>
+  <head> </head>
+
+  <body>
+    <!-- Load ONNX.js -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxjs/dist/onnx.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jimp@0.9.5/browser/lib/jimp.min.js"></script>
+    
+    
+    <input type="file" onchange="onFileChange(this.files[0])" />
+    <input type="button" onclick="onTriggerAnalysis()" value="Analyze" />
+    <div>Deep Fake probability: <strong id="fake-prob"></strong></div>
+    <canvas id="canvas"></canvas>
+    <canvas id="canvas-scaled"></canvas>
+
+    
+    <!-- Code that consume ONNX.js -->
+    <script>
+        var imgData = null;
+        var centerCropSize = 224
+        function onFileChange(file) {
+
+          var reader = new FileReader();
+
+          // Closure to capture the file information.
+          reader.onload = async function(e) {
+            var arb = e.target.result
+            let image = await Jimp.read(arb)
+            
+            console.log(image)
+            const ow = image.getWidth();
+            const oh = image.getHeight();
+            const scaleFactor = Math.max(ow / centerCropSize, oh / centerCropSize);
+            const sw = Math.floor(ow / scaleFactor);
+            const sh = Math.max(oh / scaleFactor);
+            image = image.resize(sw, sh);
+            imgData = image.bitmap.data;
+
+            // write scaled image to canvas
+            var canvas = document.getElementById('canvas-scaled')
+            var ctx = canvas.getContext('2d');
+            canvas.width = sw;
+            canvas.height = sh;
+            console.log({scaleFactor, ow, oh, sw, sh})
+
+            ctx.putImageData(new ImageData(new Uint8ClampedArray(imgData), sw, sh), 0, 0);
+          };
+
+
+          // Read in the image file as a data URL.
+          reader.readAsArrayBuffer(file);
+
+
+          var canvas = document.getElementById('canvas')
+            var ctx = canvas.getContext('2d');
+            var img = new Image;
+            img.onload = function() {
+                var width = this.width;
+                var height = this.height;
+
+                canvas.width = width;
+                canvas.height = height;
+                ctx.drawImage(img, 0, 0);
+                console.log(img)
+            }
+            img.src = URL.createObjectURL(file);
+        }
+
+        var worker = new Worker('worker.js');
+        worker.onmessage = function (event) {
+          console.log(event.data);
+
+          document.getElementById("fake-prob").innerText = (prob*100).toFixed(2) + "%"
+        }
+      
+        function onTriggerAnalysis() {
+          worker.postMessage(imgData);
+        }
+    </script>
+  </body>
+</html>
